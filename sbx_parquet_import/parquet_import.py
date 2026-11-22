@@ -1,8 +1,11 @@
 """Example of a custom annotator."""
 
+import datetime
+import json
 import math
 import unicodedata
 from collections import defaultdict
+from typing import Any
 
 import pyarrow
 from pyarrow import parquet
@@ -21,6 +24,24 @@ from sparv.api import (
 )
 
 logger = get_logger(__name__)
+
+
+def _serialize_nested(value: Any) -> Any:
+    """Serialize nested values (structs and lists) as JSON. Other values are returned unchanged.
+
+    Values that JSON can't represent, like dates, are converted to strings.
+    """
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, default=_json_default)
+    return value
+
+
+def _json_default(value: Any) -> str:
+    """Convert a value that JSON can't represent to a string, using ISO format for dates and times."""
+    if isinstance(value, (datetime.date, datetime.time)):
+        return value.isoformat()
+    return str(value)
+
 
 @importer(
     "parquet import",
@@ -152,7 +173,7 @@ def parse(
             # Extract other rows and add them as annotations
             for row, target_name in import_rows:
                 if row != text_row:
-                    annotations.setdefault(target_name, []).append(column[row])
+                    annotations.setdefault(target_name, []).append(_serialize_nested(column[row]))
 
     # Write the extracted text
     text = "\n\n".join(texts)
